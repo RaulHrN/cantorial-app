@@ -1,0 +1,77 @@
+name: iOS
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versões
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # The Swift core mirrors the Kotlin one; its tests check the port against the same cases.
+      - name: Testes do núcleo (Swift)
+        run: swift test -c release --package-path ios/CantorialCore
+
+      - name: Gerar o projeto Xcode
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Compilar o app
+        run: |
+          cd ios
+          xcodebuild \
+            -project Cantorial.xcodeproj \
+            -scheme Cantorial \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      # Unsigned: sideloading tools (AltStore, Sideloadly) sign it with the user's Apple ID.
+      - name: Empacotar IPA
+        run: |
+          mkdir -p Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/Cantorial.app Payload/
+          zip -qry Cantorial-ios.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cantorial-ios
+          path: Cantorial-ios.ipa
+
+      - name: Publicar release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-v1.2.${{ github.run_number }}
+          name: Cantorial iOS 1.2.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: "false"
+          files: Cantorial-ios.ipa
+          body: |
+            Versão para iPhone (iOS 17 ou mais novo). O arquivo **Cantorial-ios.ipa** não é assinado:
+            instale com o AltStore ou o Sideloadly, que o assinam com o seu Apple ID.
+            Com um Apple ID gratuito o app vale por 7 dias e precisa ser reinstalado (o AltStore renova sozinho).
+            Veja o passo a passo no README do repositório.
