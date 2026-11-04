@@ -20,10 +20,13 @@ import kotlin.math.sqrt
  *    weighted by how similar the left and right channels are there, and by a vocal band filter.
  * 2. Harmonic summation turns spectral peaks into a pitch salience function (10-cent bins).
  * 3. Salience peaks are linked into pitch contours.
- * 4. Contours are described (salience, pitch, vibrato, pitch fluctuation). Singing has vibrato
- *    and small natural pitch movements; most instruments hold a flat pitch. Weak, non-vocal
- *    contours and octave duplicates are dropped, and the melody is the best remaining contour
- *    in each frame.
+ * 4. Contours are described: salience, pitch, vibrato, natural pitch movement, how fast the
+ *    sound dies away, where it sits in the stereo image and how exactly it lands on the
+ *    tempered grid. Singing has vibrato and small pitch movements, sustains its notes, sits in
+ *    the centre and drifts a little off the grid; keys and plucked strings decay, many
+ *    instruments are panned, and fretted or keyed notes are exactly in tune. Non-vocal contours,
+ *    isolated stray notes and octave duplicates are dropped, and the melody is the best
+ *    remaining contour in each frame.
  *
  * Streaming: memory grows only with a few numbers per frame, never with the audio itself.
  */
@@ -49,13 +52,17 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
     private val bins = FFT / 2
     private val mag = FloatArray(bins + 1)
     private val bandWeight = FloatArray(bins + 1) { k -> bandWeight(k * sampleRate / FFT) }
+    private val centreAt = FloatArray(bins + 1)
     private val salience = FloatArray(SAL_BINS)
     private val peakFreq = FloatArray(MAX_PEAKS)
     private val peakAmp = FloatArray(MAX_PEAKS)
+    private val peakBin = IntArray(MAX_PEAKS)
+    private var refinedCentre = 1f
 
     // Per frame: up to PEAKS_PER_FRAME (pitch, salience) pairs.
     private val framePitch = FloatList(8192)
     private val frameSal = FloatList(8192)
+    private val frameCentre = FloatList(8192)
     private val levels = FloatList(2048)
     private var frames = 0
 
@@ -96,6 +103,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
             val pr = rr * rr + ri * ri
             val similarity = 2f * (lr * rr + li * ri) / (pl + pr + 1e-12f)
             val centre = max(0f, similarity)
+            centreAt[k] = centre
             val mr = lr + rr
             val mi = li + ri
             val m = sqrt(mr * mr + mi * mi) * 0.5f * (0.25f + 0.75f * centre * centre) * bandWeight[k]
@@ -116,6 +124,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
         while (framePitch.size < start + PEAKS_PER_FRAME) {
             framePitch.add(Float.NaN)
             frameSal.add(0f)
+            frameCentre.add(0f)
         }
         frames++
     }
@@ -139,6 +148,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
                 if (count < MAX_PEAKS) {
                     peakFreq[count] = (k + delta) * sampleRate / FFT
                     peakAmp[count] = amp
+                    peakBin[count] = k
                     count++
                 } else {
                     // Replace the weakest stored peak.
@@ -147,6 +157,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
                     if (amp > peakAmp[weakest]) {
                         peakFreq[weakest] = (k + delta) * sampleRate / FFT
                         peakAmp[weakest] = amp
+                        peakBin[weakest] = k
                     }
                 }
             }
@@ -204,7 +215,13 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
             }
         }
         for (j in 0 until PEAKS_PER_FRAME) {
-            framePitch.add(if (slots[j].isNaN()) Float.NaN else refine(slots[j], peakCount))
+            if (slots[j].isNaN()) {
+                framePitch.add(Float.NaN)
+                frameCentre.add(0f)
+            } else {
+                framePitch.add(refine(slots[j], peakCount))
+                frameCentre.add(refinedCentre)
+            }
             frameSal.add(vals[j])
         }
     }
@@ -217,6 +234,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
         val f0 = Pitch.midiToHz(midi, a4)
         var num = 0f
         var den = 0f
+        var centre = 0f
         for (h in 1..6) {
             val target = f0 * h
             var bestA = 0f
@@ -231,20 +249,29 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
             if (bestA > 0f) {
                 num += bestA * bestF / h
                 den += bestA
+                centre += bestA * centreAt[binOf(bestF)]
             }
         }
+        // How centred this source is in the stereo image (1 = centre or mono).
+        refinedCentre = if (den > 0f) centre / den else 1f
         return if (den > 0f) Pitch.hzToMidi(num / den, a4) else midi
     }
+
+    private fun binOf(hz: Float): Int = (hz * FFT / sampleRate).roundToInt().coerceIn(0, bins)
 
     private class Contour(val start: Int) {
         val pitch = FloatList(64)
         val sal = FloatList(64)
+        val centre = FloatList(64)
         var last = start
         var lastPitch = 0f
         var meanSal = 0f
         var totalSal = 0f
         var meanPitch = 0f
         var vocal = 0f
+        var vibrato = false
+        var stereoCentre = 1f
+        var decayDbPerS = 0f
         var dev = FloatArray(0)
         var removed = false
         val end: Int get() = start + pitch.size - 1
@@ -292,7 +319,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
             .filter { !framePitch[it].isNaN() && frameSal[it] >= SEED_RATIO * frameMax[it / p] }
             .sortedByDescending { frameSal[it] }
 
-        fun follow(from: Int, pitch0: Float, step: Int, out: FloatList, sal: FloatList) {
+        fun follow(from: Int, pitch0: Float, step: Int, out: FloatList, sal: FloatList, cen: FloatList) {
             var pitch = pitch0
             var f = from
             var gap = 0
@@ -314,6 +341,7 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
                     if (++gap > MAX_GAP) break
                     out.add(Float.NaN)
                     sal.add(0f)
+                    cen.add(0f)
                     continue
                 }
                 gap = 0
@@ -321,33 +349,43 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
                 pitch = framePitch[best]
                 out.add(pitch)
                 sal.add(frameSal[best])
+                cen.add(frameCentre[best])
             }
             // Drop the unvoiced tail left by the gap allowance.
-            while (out.size > 0 && out[out.size - 1].isNaN()) out.removeLast().also { sal.removeLast() }
+            while (out.size > 0 && out[out.size - 1].isNaN()) {
+                out.removeLast()
+                sal.removeLast()
+                cen.removeLast()
+            }
         }
 
         val contours = ArrayList<Contour>()
         val fwd = FloatList(256)
         val fwdSal = FloatList(256)
+        val fwdCen = FloatList(256)
         val back = FloatList(256)
         val backSal = FloatList(256)
+        val backCen = FloatList(256)
         for (seed in seeds) {
             if (assigned[seed]) continue
             assigned[seed] = true
             val f0 = seed / p
-            fwd.clear(); fwdSal.clear(); back.clear(); backSal.clear()
-            follow(f0, framePitch[seed], 1, fwd, fwdSal)
-            follow(f0, framePitch[seed], -1, back, backSal)
+            fwd.clear(); fwdSal.clear(); fwdCen.clear(); back.clear(); backSal.clear(); backCen.clear()
+            follow(f0, framePitch[seed], 1, fwd, fwdSal, fwdCen)
+            follow(f0, framePitch[seed], -1, back, backSal, backCen)
             val c = Contour(f0 - back.size)
             for (k in back.size - 1 downTo 0) {
                 c.pitch.add(back[k])
                 c.sal.add(backSal[k])
+                c.centre.add(backCen[k])
             }
             c.pitch.add(framePitch[seed])
             c.sal.add(frameSal[seed])
+            c.centre.add(frameCentre[seed])
             for (k in 0 until fwd.size) {
                 c.pitch.add(fwd[k])
                 c.sal.add(fwdSal[k])
+                c.centre.add(fwdCen[k])
             }
             if ((0 until c.pitch.size).count { !c.pitch[it].isNaN() } >= MIN_LENGTH) contours.add(c)
         }
@@ -360,15 +398,19 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
             var n = 0
             var sum = 0f
             var pitchSum = 0f
+            var centreSum = 0f
             for (i in 0 until c.pitch.size) {
                 if (c.pitch[i].isNaN()) continue
                 n++
                 sum += c.sal[i]
                 pitchSum += c.pitch[i]
+                centreSum += c.sal[i] * c.centre[i]
             }
             c.totalSal = sum
             c.meanSal = sum / n
             c.meanPitch = pitchSum / n
+            c.stereoCentre = if (sum > 0f) centreSum / sum else 1f
+            c.decayDbPerS = decay(c)
 
             // Detrend with a ~200 ms moving average and look at what is left.
             val len = c.pitch.size
@@ -414,17 +456,58 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
                 }
             }
             val vibrato = purity >= 0.45f && wobble in 7f..90f
+            val seconds = len * hopMs / 1000f
             // Plain flat lines (keys, guitars, pads) score 0; lively voice-like lines up to 2.
-            c.vocal = (if (vibrato) 1f else 0f) + ((wobble - 3f) / 12f).coerceIn(0f, if (vibrato) 1f else 0.7f)
+            var vocal = (if (vibrato) 1f else 0f) + ((wobble - 3f) / 12f).coerceIn(0f, if (vibrato) 1f else 0.7f)
+            // Struck and plucked sounds (piano, guitar, harp, mallets) die away; a voice sustains.
+            if (c.decayDbPerS < -12f) {
+                vocal -= min(1.5f, (-c.decayDbPerS - 12f) / 8f + 0.5f)
+            } else if (!vibrato && c.decayDbPerS > -6f && c.stereoCentre >= 0.9f && len >= 8 && seconds <= 2.5f && wobble >= 4f) {
+                // A sung note: sustained, centred, alive.
+                vocal += 0.25f
+            }
+            // Long flat drones (pads, organ, bass held under a chord) are accompaniment.
+            if (!vibrato && seconds > 2.5f) vocal -= 0.6f
+            // Lead vocals sit in the centre; a panned line is an instrument (violin, guitar...).
+            if (c.stereoCentre < 0.85f) vocal -= (0.85f - c.stereoCentre) * 6f
+            c.vocal = vocal
+            c.vibrato = vibrato
             c.dev = dev
         }
     }
 
+    /** Level slope over the contour in dB per second, ignoring the attack and the release. */
+    private fun decay(c: Contour): Float {
+        var n = 0
+        var sx = 0.0
+        var sy = 0.0
+        var sxx = 0.0
+        var sxy = 0.0
+        for (i in 2 until c.pitch.size - 3) {
+            if (c.pitch[i].isNaN() || c.sal[i] <= 0f) continue
+            val x = i * hopMs / 1000.0
+            val y = 20.0 * log10(c.sal[i].toDouble())
+            n++
+            sx += x; sy += y; sxx += x * x; sxy += x * y
+        }
+        if (n < 6) return 0f
+        val den = n * sxx - sx * sx
+        return if (den <= 1e-12) 0f else ((n * sxy - sx * sy) / den).toFloat()
+    }
+
     /** Voicing detection and octave-error removal, then leaves the melody contours. */
     private fun select(contours: List<Contour>) {
+        // Keys and frets land exactly on the tempered grid; singers drift around it.
+        val tuning = tuningOffset(contours)
         for (c in contours) {
-            // Outside the singing range, or a flat instrument-like line: not the voice.
-            if (c.meanPitch < 42f || c.meanPitch > 86f || c.vocal < 0.2f) c.removed = true
+            val off = abs(gridDistance(c.meanPitch - tuning)) * 100f
+            if (!c.vibrato) {
+                if (off < 3f) c.vocal -= 0.15f else if (off > 12f) c.vocal += 0.15f
+            }
+        }
+        for (c in contours) {
+            // Outside the singing range, or an instrument-like line: not the voice.
+            if (c.meanPitch < 42f || c.meanPitch > 86f || c.vocal < 0.35f) c.removed = true
         }
         val alive = contours.filter { !it.removed }
         if (alive.isEmpty()) return
@@ -449,15 +532,46 @@ class MelodyExtractor(val sampleRate: Float, private val a4: Float = 440f) {
         repeat(2) {
             val trend = melodyTrend(contours)
             val left = contours.filter { !it.removed }
-            // Remaining octave doubts: keep the contour closer to where the melody is.
+            // Remaining octave doubts: a clearly more voice-like line wins; otherwise keep the
+            // contour closer to where the melody is.
             for (a in left) for (b in left) {
                 if (a === b || a.removed || b.removed) continue
                 if (!overlaps(a, b) || abs(abs(a.meanPitch - b.meanPitch) - 12f) > 1.5f) continue
-                if (distanceToTrend(a, trend) > distanceToTrend(b, trend)) a.removed = true else b.removed = true
+                when {
+                    a.vocal >= b.vocal + 0.8f -> b.removed = true
+                    b.vocal >= a.vocal + 0.8f -> a.removed = true
+                    distanceToTrend(a, trend) > distanceToTrend(b, trend) -> a.removed = true
+                    else -> b.removed = true
+                }
             }
-            for (c in left) if (!c.removed && distanceToTrend(c, trend) > 8f) c.removed = true
+            for (c in left) if (!c.removed && c.vocal < 1.5f && distanceToTrend(c, trend) > 8f) c.removed = true
+        }
+        // A voice sings phrases: a lone note far from any other is a stray instrument.
+        val isolation = (2500f / hopMs).toInt()
+        val left = contours.filter { !it.removed }.sortedBy { it.start }
+        for ((i, c) in left.withIndex()) {
+            if (c.vocal >= 1.5f) continue
+            val before = left.getOrNull(i - 1)?.let { c.start - it.end } ?: Int.MAX_VALUE
+            val after = left.getOrNull(i + 1)?.let { it.start - c.end } ?: Int.MAX_VALUE
+            if (before > isolation && after > isolation) c.removed = true
         }
     }
+
+    /** Song-wide tuning offset in semitones (circular mean of the distance to the grid). */
+    private fun tuningOffset(contours: List<Contour>): Float {
+        var cs = 0.0
+        var sn = 0.0
+        for (c in contours) {
+            val w = c.meanSal * c.pitch.size
+            val a = 2.0 * PI * gridDistance(c.meanPitch)
+            cs += w * cos(a)
+            sn += w * sin(a)
+        }
+        return if (cs == 0.0 && sn == 0.0) 0f else (kotlin.math.atan2(sn, cs) / (2.0 * PI)).toFloat()
+    }
+
+    /** Signed distance to the nearest semitone, -0.5..0.5. */
+    private fun gridDistance(midi: Float): Float = midi - midi.roundToInt()
 
     /** Pearson correlation of the pitch movements of two contours where they overlap. */
     private fun correlation(a: Contour, b: Contour): Float {

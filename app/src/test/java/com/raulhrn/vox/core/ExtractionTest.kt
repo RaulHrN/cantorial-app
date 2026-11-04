@@ -8,8 +8,9 @@ import kotlin.math.exp
 import kotlin.math.sin
 
 /**
- * Melody extraction on synthetic songs: a sung line (centre, vibrato) mixed with
- * stereo chords, bass, a plucked guitar in the same register and drums.
+ * Melody extraction on synthetic songs: a sung line (centre, vibrato, scoops) mixed with
+ * stereo chords, bass, a plucked guitar in the same register and drums, optionally after an
+ * instrumental intro where melodic instruments (violin with vibrato, piano, bent guitar) play.
  */
 class ExtractionTest {
     private val rate = 22050f
@@ -18,15 +19,16 @@ class ExtractionTest {
 
     // "Ode à Alegria" in C, twice.
     private val melody = intArrayOf(64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62, 64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 62, 60, 60)
-    private val voiceStartMs = 1000
-    private val totalMs = voiceStartMs + melody.size * (noteMs + restMs) + 1000
+    private val voiceMs = melody.size * (noteMs + restMs)
+    private var voiceStartMs = 1000
+    private var totalMs = voiceStartMs + voiceMs + 1000
 
     private fun samples(ms: Int) = (ms * rate / 1000).toInt()
 
     private fun addTone(
         l: FloatArray, r: FloatArray, startMs: Int, durMs: Int, midi: Float, amp: Float,
         panL: Float, panR: Float, harmonics: Int, tilt: Double, decayMs: Float = 0f, vibrato: Float = 0f,
-        drift: Random? = null,
+        drift: Random? = null, bendFrom: Float = 0f, bendMs: Float = 0f, vibratoHz: Double = 5.5,
     ) {
         val start = samples(startMs)
         val n = samples(durMs)
@@ -38,7 +40,8 @@ class ExtractionTest {
             val t = i / rate
             // Natural pitch drift of a straight (non-vibrato) voice: slow random wander of ~10 cents.
             if (drift != null && i % 64 == 0) wander = (0.995f * wander + 0.012f * drift.nextGaussian().toFloat()).coerceIn(-0.2f, 0.2f)
-            val vib = vibrato * sin(2.0 * PI * 5.5 * t).toFloat() * minOf(1f, t / 0.25f) + wander
+            val bend = if (bendMs > 0f && t * 1000f < bendMs) bendFrom * (1f - t * 1000f / bendMs) else 0f
+            val vib = vibrato * sin(2.0 * PI * vibratoHz * t).toFloat() * minOf(1f, t / 0.25f) + wander + bend
             val hz = Pitch.midiToHz(midi + vib)
             phase += 2.0 * PI * hz / rate
             var v = 0.0
@@ -58,16 +61,20 @@ class ExtractionTest {
         voiceAmp: Float = 0.10f,
         mono: Boolean = false,
         vibrato: Float = 0.3f,
+        introMs: Int = 0,
     ): Pair<FloatArray, FloatArray> {
+        voiceStartMs = 1000 + introMs
+        totalMs = voiceStartMs + voiceMs + 1000
         val len = samples(totalMs)
         val l = FloatArray(len)
         val r = FloatArray(len)
         if (withVoice) {
+            val intonation = Random(seed * 31)
             for ((i, m) in melody.withIndex()) {
-                // Voice: centre, vibrato, a scoop into each note, strong low harmonics.
+                // Voice: centre, vibrato, a small scoop into each note, natural intonation, strong low harmonics.
                 addTone(
-                    l, r, voiceStartMs + i * (noteMs + restMs), noteMs, m.toFloat(), voiceAmp, 1f, 1f, 8, 0.9,
-                    vibrato = vibrato, drift = if (vibrato == 0f) Random(seed + i) else null,
+                    l, r, voiceStartMs + i * (noteMs + restMs), noteMs, m + (intonation.nextGaussian() * 0.1).toFloat(), voiceAmp, 1f, 1f, 8, 0.9,
+                    vibrato = vibrato, drift = if (vibrato == 0f) Random(seed + i) else null, bendFrom = -0.3f, bendMs = 70f,
                 )
             }
         }
@@ -91,6 +98,24 @@ class ExtractionTest {
                 }
                 t += 2000
                 c++
+            }
+            if (introMs > 0) {
+                // Melodic instruments in the intro, in the vocal register and as loud as the voice.
+                // Violin: sustained, regular vibrato, panned left.
+                for ((k, m) in intArrayOf(67, 69, 71, 72).withIndex()) {
+                    addTone(l, r, 1000 + k * 500, 480, m.toFloat(), 0.10f, 1f, 0.35f, 10, 1.0, vibrato = 0.25f, vibratoHz = 6.0)
+                }
+                // Piano: centre, struck and decaying, exactly in tune.
+                for ((k, m) in intArrayOf(72, 71, 69, 67, 65, 64).withIndex()) {
+                    addTone(l, r, 3000 + k * 330, 320, m.toFloat(), 0.14f, 1f, 1f, 8, 1.3, decayMs = 350f)
+                }
+                // Electric guitar: bends into each note, some vibrato, decaying, panned right.
+                for ((k, m) in intArrayOf(64, 62, 60).withIndex()) {
+                    addTone(
+                        l, r, 5000 + k * 650, 640, m.toFloat(), 0.12f, 0.4f, 1f, 7, 1.2,
+                        decayMs = 700f, vibrato = 0.15f, bendFrom = -1f, bendMs = 150f,
+                    )
+                }
             }
             // Drums: noise bursts in the centre.
             val rnd = Random(seed)
@@ -151,6 +176,27 @@ class ExtractionTest {
         // Instrument notes outside the sung part are not reported as melody.
         val outside = notes.count { it.endMs < voiceStartMs - 200 || it.startMs > voiceStartMs + melody.size * (noteMs + restMs) + 200 }
         assertTrue("$outside notes outside the vocal part", outside <= 2)
+    }
+
+    @Test
+    fun melodicInstrumentsAreNotTakenForVoice() {
+        val (l, r) = song(withVoice = true, withBand = true, introMs = 6500)
+        val (_, notes) = extract(l, r)
+        val acc = accuracy(notes)
+        val inIntro = notes.filter { it.endMs < voiceStartMs - 200 }
+        println("With an instrumental intro: accuracy %.0f%%, %d notes in the intro %s".format(acc * 100, inIntro.size, inIntro.map { it.midi }))
+        assertTrue("accuracy $acc", acc >= 0.85f)
+        assertTrue("${inIntro.size} instrument notes taken for voice", inIntro.size <= 1)
+    }
+
+    @Test
+    fun instrumentalWithMelodicInstrumentsHasAlmostNoMelody() {
+        val (l, r) = song(withVoice = false, withBand = true, introMs = 6500)
+        val (res, notes) = extract(l, r)
+        println("Instrumental with lead instruments: voiced %.0f%%, %d notes".format(res.voicedRatio * 100, notes.size))
+        assertTrue("voiced ${res.voicedRatio}", res.voicedRatio < 0.15f)
+        // Without any singer, a centred lead line with vibrato can still pass for a voice.
+        assertTrue("${notes.size} notes", notes.size <= 4)
     }
 
     @Test

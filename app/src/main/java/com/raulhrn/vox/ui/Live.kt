@@ -1,8 +1,12 @@
 package com.raulhrn.vox.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -27,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableLongState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -251,4 +257,52 @@ fun balanceHint(relative: Float, target: Float): String = when {
     relative - target > 2.5f -> "mais suave"
     target - relative > 2.5f -> "um pouco mais forte"
     else -> "na medida"
+}
+
+private val HEADPHONE_TYPES = setOf(
+    AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+    AudioDeviceInfo.TYPE_WIRED_HEADSET,
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+    AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+    AudioDeviceInfo.TYPE_USB_HEADSET,
+    AudioDeviceInfo.TYPE_BLE_HEADSET,
+)
+
+/**
+ * Whether headphones are connected. Without them the microphone also hears the music the app
+ * plays through the speaker, and instruments get mixed up with the singer's voice.
+ */
+@Composable
+fun rememberHeadphones(): State<Boolean> {
+    val context = LocalContext.current
+    val connected = remember { mutableStateOf(false) }
+    DisposableEffect(context) {
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        fun check() {
+            connected.value = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in HEADPHONE_TYPES }
+        }
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) = check()
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) = check()
+        }
+        am.registerAudioDeviceCallback(callback, null)
+        check()
+        onDispose { am.unregisterAudioDeviceCallback(callback) }
+    }
+    return connected
+}
+
+/** One-line warning shown while practising with sound through the speaker. */
+@Composable
+fun SpeakerWarning(modifier: Modifier = Modifier) {
+    val c = Vox.colors
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Icon(VoxIcons.Headphones, null, tint = c.warn, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Sem fones o microfone também ouve a música e pode confundir instrumento com voz.",
+            style = VoxType.small,
+            color = c.warn,
+        )
+    }
 }

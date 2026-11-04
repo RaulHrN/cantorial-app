@@ -60,6 +60,8 @@ import com.raulhrn.vox.ui.Nav
 import com.raulhrn.vox.ui.Panel
 import com.raulhrn.vox.ui.PianoRoll
 import com.raulhrn.vox.ui.RollKind
+import com.raulhrn.vox.ui.SpeakerWarning
+import com.raulhrn.vox.ui.rememberHeadphones
 import com.raulhrn.vox.ui.RollNote
 import com.raulhrn.vox.ui.RoundButton
 import com.raulhrn.vox.ui.ScreenPadding
@@ -199,13 +201,8 @@ private fun PatternContent(ex: Exercise, lead: VoiceType?) {
     val currentRoot = (roots[rep.coerceAtMost(roots.lastIndex)] + transpose).coerceIn(24, 96)
 
     Column(Modifier.fillMaxSize()) {
-        if (ex.needsHeadphones) {
-            Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(VoxIcons.Headphones, null, tint = c.muted, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Use fones de ouvido", style = VoxType.small, color = c.muted)
-            }
-        }
+        val headphones by rememberHeadphones()
+        if (ex.needsHeadphones && !headphones) SpeakerWarning(Modifier.padding(bottom = 8.dp))
         Panel(onClick = { showSteps = !showSteps }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("COMO FAZER", style = VoxType.caps, color = c.muted, modifier = Modifier.weight(1f))

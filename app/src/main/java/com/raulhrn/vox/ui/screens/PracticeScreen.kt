@@ -76,7 +76,9 @@ import com.raulhrn.vox.ui.Vox
 import com.raulhrn.vox.ui.VoxButton
 import com.raulhrn.vox.ui.VoxIcons
 import com.raulhrn.vox.ui.VoxType
+import com.raulhrn.vox.ui.SpeakerWarning
 import com.raulhrn.vox.ui.balanceHint
+import com.raulhrn.vox.ui.rememberHeadphones
 import com.raulhrn.vox.ui.formatTime
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -192,6 +194,8 @@ private fun PracticeContent(nav: Nav, song: Song) {
     var editing by remember { mutableStateOf(false) }
     var selected by remember { mutableIntStateOf(-1) }
     var calibrating by remember { mutableStateOf(false) }
+    var confirmPhraseDelete by remember { mutableStateOf(false) }
+    val headphones by rememberHeadphones()
     val relative = remember { mutableFloatStateOf(Float.NaN) }
     val trace = remember { Trace() }
     val tick = remember { mutableLongStateOf(0L) }
@@ -265,6 +269,7 @@ private fun PracticeContent(nav: Nav, song: Song) {
             }
         }
         selected = if (bestScore < 4f) best else -1
+        confirmPhraseDelete = false
         if (selected >= 0) synth.preview(song.notes[selected].midi)
     }
 
@@ -282,6 +287,16 @@ private fun PracticeContent(nav: Nav, song: Song) {
             synth.preview(changed.midi)
         }
         SongStore.upsert(saved.copy(notes = list))
+    }
+
+    /** Deletes every melody note of the phrase around the selected note (e.g. an instrumental fill). */
+    fun deleteSelectedPhrase() {
+        val saved = SongStore.find(song.id) ?: return
+        val note = saved.notes.getOrNull(selected) ?: return
+        val phrase = Phrases.split(saved.notes).firstOrNull { note.startMs >= it.startMs && note.startMs < it.endMs } ?: return
+        val kept = saved.notes.filter { it.startMs < phrase.startMs || it.startMs >= phrase.endMs }
+        selected = -1
+        SongStore.upsert(saved.copy(notes = kept))
     }
 
     fun goToPhrase(i: Int) {
@@ -594,8 +609,28 @@ private fun PracticeContent(nav: Nav, song: Song) {
                     columns = EDITS.size,
                     selected = { false },
                     label = { it.first },
-                    onSelect = { e -> editSelected(e.second) },
+                    onSelect = { e ->
+                        confirmPhraseDelete = false
+                        editSelected(e.second)
+                    },
                 )
+                if (selected >= 0) {
+                    Text(
+                        if (confirmPhraseDelete) "Toque de novo para apagar a frase inteira" else "Apagar a frase toda (ex.: um solo instrumental)",
+                        style = VoxType.label,
+                        color = if (confirmPhraseDelete) c.bad else c.accent,
+                        modifier = Modifier
+                            .clickable {
+                                if (confirmPhraseDelete) {
+                                    confirmPhraseDelete = false
+                                    deleteSelectedPhrase()
+                                } else {
+                                    confirmPhraseDelete = true
+                                }
+                            }
+                            .padding(vertical = 8.dp),
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 Text("Arraste a faixa para os lados para andar pela música.", style = VoxType.small, color = c.muted)
             }
@@ -629,6 +664,7 @@ private fun PracticeContent(nav: Nav, song: Song) {
             BalanceMeter({ relative.floatValue }, lines.mineDb)
         }
 
+        if (playing && !headphones) SpeakerWarning(Modifier.padding(top = 6.dp))
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${formatTime(dragging ?: sliderPos)} / ${formatTime(totalMs)}",
