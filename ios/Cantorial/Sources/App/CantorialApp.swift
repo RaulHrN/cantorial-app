@@ -10,29 +10,43 @@ struct CantorialApp: App {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithTransparentBackground()
         appearance.backgroundColor = UIColor(Palette.bg)
-        appearance.titleTextAttributes = [.foregroundColor: UIColor(Palette.text)]
-        appearance.largeTitleTextAttributes = [.foregroundColor: UIColor(Palette.text)]
+        let serif = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .largeTitle).withDesign(.serif)
+        let small = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .headline).withDesign(.serif)
+        var title: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor(Palette.text)]
+        var large = title
+        if let small { title[.font] = UIFont(descriptor: small, size: 18) }
+        if let serif { large[.font] = UIFont(descriptor: serif, size: 34) }
+        appearance.titleTextAttributes = title
+        appearance.largeTitleTextAttributes = large
+        // At rest the bar is clear, so the illustration shows behind the large title.
+        let clear = UINavigationBarAppearance()
+        clear.configureWithTransparentBackground()
+        clear.titleTextAttributes = title
+        clear.largeTitleTextAttributes = large
         UINavigationBar.appearance().standardAppearance = appearance
-        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = clear
         UINavigationBar.appearance().compactAppearance = appearance
+        SheetStore.shared.load()
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .tint(Palette.accent)
+                .fontDesign(.serif)
         }
     }
 }
 
 enum AppTab: CaseIterable {
-    case live, train, songs, study
+    case live, train, songs, cifras, study
 
     var label: String {
         switch self {
         case .live: return "Ouvir"
         case .train: return "Treinar"
         case .songs: return "Músicas"
+        case .cifras: return "Cifras"
         case .study: return "Estudar"
         }
     }
@@ -42,6 +56,7 @@ enum AppTab: CaseIterable {
         case .live: return "waveform"
         case .train: return "figure.mind.and.body"
         case .songs: return "music.note.list"
+        case .cifras: return "music.quarternote.3"
         case .study: return "book"
         }
     }
@@ -58,6 +73,11 @@ enum Route: Hashable {
     case lessons
     case lesson(HarmonyMode)
     case backingLab
+    /// nil creates a new chord sheet.
+    case cifraEdit(String?)
+    /// Sheet id, plus the setlist and position while going through a setlist.
+    case cifraView(String, String?, Int)
+    case setlist(String)
 }
 
 /// Minimal navigation: one tab plus a stack of pushed screens.
@@ -91,13 +111,20 @@ struct RootView: View {
                     case .live: LiveScreen()
                     case .train: TrainScreen()
                     case .songs: SongsScreen()
+                    case .cifras: CifrasScreen()
                     case .study: StudyScreen()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 BottomBar(tab: $nav.tab)
             }
-            .background(Palette.bg.ignoresSafeArea())
+            .background {
+                ZStack(alignment: .top) {
+                    Palette.bg
+                    Scenery().frame(height: 330)
+                }
+                .ignoresSafeArea()
+            }
             .navigationDestination(for: Route.self) { route in
                 destination(route)
                     .background(Palette.bg.ignoresSafeArea())
@@ -119,6 +146,9 @@ struct RootView: View {
         case .lessons: LessonsScreen()
         case let .lesson(mode): LessonScreen(mode: mode)
         case .backingLab: BackingLabScreen()
+        case let .cifraEdit(id): CifraEditScreen(id: id)
+        case let .cifraView(id, setlist, index): CifraViewScreen(id: id, setlistId: setlist, index: index)
+        case let .setlist(id): SetlistScreen(id: id)
         }
     }
 }
@@ -137,7 +167,7 @@ private struct BottomBar: View {
                             Image(systemName: t.icon).font(.system(size: 18, weight: selected ? .semibold : .regular))
                             Text(t.label).font(.system(size: 11, weight: .medium))
                         }
-                        .foregroundStyle(selected ? Palette.accent : Palette.muted)
+                        .foregroundStyle(selected ? Palette.text : Palette.faint)
                         .frame(maxWidth: .infinity, minHeight: 52)
                         .contentShape(Rectangle())
                     }

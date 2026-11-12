@@ -16,6 +16,7 @@ final class Prefs {
     private(set) var rangeHigh: Int
     private(set) var rangeMeasured: Bool
     private var storedLeadLevel: Float
+    private var storedCifraSize: Float
 
     private init() {
         let d = UserDefaults.standard
@@ -26,6 +27,7 @@ final class Prefs {
         rangeHigh = d.object(forKey: "high") != nil ? d.integer(forKey: "high") : 67
         rangeMeasured = d.bool(forKey: "measured")
         storedLeadLevel = d.object(forKey: "leadLevel") != nil ? d.float(forKey: "leadLevel") : .nan
+        storedCifraSize = d.object(forKey: "cifraSize") != nil ? d.float(forKey: "cifraSize") : 15
         applyToEngine()
     }
 
@@ -63,6 +65,15 @@ final class Prefs {
         set {
             storedLeadLevel = newValue
             store.set(newValue, forKey: "leadLevel")
+        }
+    }
+
+    /// Text size (points) of chord sheets.
+    var cifraSize: Float {
+        get { storedCifraSize }
+        set {
+            storedCifraSize = min(max(newValue, 11), 26)
+            store.set(storedCifraSize, forKey: "cifraSize")
         }
     }
 

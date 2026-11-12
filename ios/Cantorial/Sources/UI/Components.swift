@@ -112,9 +112,9 @@ struct PillButton: View {
                 Text(title).font(Typo.label)
             }
             .frame(maxWidth: .infinity, minHeight: 48)
-            .foregroundStyle(primary ? Palette.onAccent : Palette.text)
+            .foregroundStyle(primary ? Palette.onPrimary : Palette.text)
             .background(
-                Capsule().fill(primary ? Palette.accent : Color.clear)
+                Capsule().fill(primary ? Palette.primary : Color.clear)
             )
             .overlay(Capsule().stroke(primary ? Color.clear : Palette.line, lineWidth: 1))
             .contentShape(Capsule())
@@ -138,8 +138,8 @@ struct RoundButton: View {
             Image(systemName: icon)
                 .font(.system(size: size * 0.36, weight: .semibold))
                 .frame(width: size, height: size)
-                .foregroundStyle(primary ? Palette.onAccent : Palette.text)
-                .background(Circle().fill(primary ? Palette.accent : Palette.surface2))
+                .foregroundStyle(primary ? Palette.onPrimary : Palette.text)
+                .background(Circle().fill(primary ? Palette.primary : Palette.surface2))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -173,8 +173,8 @@ struct Chip: View {
                 .lineLimit(1)
                 .padding(.horizontal, 14)
                 .frame(height: 36)
-                .foregroundStyle(selected ? Palette.onAccent : Palette.text)
-                .background(Capsule().fill(selected ? Palette.accent : Palette.surface2))
+                .foregroundStyle(selected ? Palette.bg : Palette.text)
+                .background(Capsule().fill(selected ? Palette.text : Palette.surface2))
         }
         .buttonStyle(.plain)
     }
@@ -200,8 +200,8 @@ struct ChoiceGrid<T: Hashable>: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, minHeight: 40)
                         .padding(.horizontal, 4)
-                        .foregroundStyle(on ? Palette.onAccent : Palette.text)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Palette.accent : Palette.surface2))
+                        .foregroundStyle(on ? Palette.bg : Palette.text)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Palette.text : Palette.surface2))
                 }
                 .buttonStyle(.plain)
             }
@@ -243,7 +243,7 @@ struct ToggleRow: View {
                 if let detail { Text(detail).font(Typo.small).foregroundStyle(Palette.muted) }
             }
         }
-        .tint(Palette.accent)
+        .tint(Palette.primary)
         .padding(.vertical, 6)
     }
 }
