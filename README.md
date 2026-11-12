@@ -10,7 +10,7 @@ traz exercícios guiados com pontuação de afinação, material de estudo e ens
 2. Toque em **Cantorial.apk** para baixar e depois em **Instalar**.
 3. Se o Android pedir, permita "instalar apps desconhecidos" para o navegador.
 
-Link direto do APK: `https://github.com/RaulHrN/Typescript-study/releases/latest/download/Cantorial.apk`
+Link direto do APK: `https://github.com/RaulHrN/cantorial-app/releases/latest/download/Cantorial.apk`
 
 Cada envio para o repositório gera um APK novo pelo GitHub Actions (`.github/workflows/android.yml`).
 Versões novas instalam por cima da anterior (veja "Assinatura" abaixo), inclusive sobre o app quando ele
@@ -60,6 +60,10 @@ Com uma conta paga do Apple Developer Program dá para assinar por um ano ou dis
     afinação ao vivo e medidor de equilíbrio do backing;
   - correção manual das notas da melodia, inclusive apagar de uma vez uma frase que era instrumental;
   - aviso quando a música toca no alto-falante sem fones, porque aí o microfone também ouve os instrumentos.
+- **Cifras**: guarde as cifras das músicas (coladas ou digitadas, com os acordes acima da letra ou entre
+  colchetes), **mude o tom** com um toque mantendo os acordes alinhados à letra, ajuste o tamanho do texto e
+  monte **listas de apresentação**: ao abrir uma cifra pela lista, um botão grande no rodapé leva direto à
+  próxima música, sem deixar a tela apagar.
 - **Estudar**: textos curtos sobre respiração, apoio, registros, intervalos, campo harmônico, tipos de
   segunda voz, backing vocal, equilíbrio, combinações de vozes, saúde vocal e rotina de estudo.
 

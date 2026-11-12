@@ -19,6 +19,7 @@ object Prefs {
     private val highState = mutableIntStateOf(67)
     private val measuredState = mutableStateOf(false)
     private val leadLevelState = mutableFloatStateOf(Float.NaN)
+    private val cifraSizeState = mutableFloatStateOf(15f)
 
     fun init(context: Context) {
         if (::sp.isInitialized) return
@@ -30,6 +31,7 @@ object Prefs {
         highState.intValue = sp.getInt("high", 67)
         measuredState.value = sp.getBoolean("measured", false)
         leadLevelState.floatValue = sp.getFloat("leadLevel", Float.NaN)
+        cifraSizeState.floatValue = sp.getFloat("cifraSize", 15f)
         applyToEngine()
     }
 
@@ -79,6 +81,15 @@ object Prefs {
         set(v) {
             leadLevelState.floatValue = v
             sp.edit().putFloat("leadLevel", v).apply()
+        }
+
+    /** Text size (sp) of chord sheets. */
+    var cifraSize: Float
+        get() = cifraSizeState.floatValue
+        set(v) {
+            val size = v.coerceIn(11f, 26f)
+            cifraSizeState.floatValue = size
+            sp.edit().putFloat("cifraSize", size).apply()
         }
 
     private fun applyToEngine() {

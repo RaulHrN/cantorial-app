@@ -85,14 +85,14 @@ fun VoxButton(
     enabled: Boolean = true,
 ) {
     val c = Vox.colors
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier
             .heightIn(min = 48.dp)
             .clip(shape)
             .then(
                 when {
-                    primary && enabled -> Modifier.background(c.accent)
+                    primary && enabled -> Modifier.background(c.primary)
                     primary -> Modifier.background(c.surface2)
                     else -> Modifier.border(1.dp, c.line, shape)
                 },
@@ -104,7 +104,7 @@ fun VoxButton(
         horizontalArrangement = Arrangement.Center,
     ) {
         val fg = when {
-            primary && enabled -> c.onAccent
+            primary && enabled -> c.onPrimary
             primary -> c.muted
             else -> c.text
         }
@@ -123,11 +123,11 @@ fun RoundButton(icon: ImageVector, description: String, onClick: () -> Unit, siz
         Modifier
             .size(size)
             .clip(CircleShape)
-            .then(if (primary) Modifier.background(c.accent) else Modifier.background(c.surface2))
+            .then(if (primary) Modifier.background(c.primary) else Modifier.background(c.surface2))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, description, tint = if (primary) c.onAccent else c.text, modifier = Modifier.size(size * 0.42f))
+        Icon(icon, description, tint = if (primary) c.onPrimary else c.text, modifier = Modifier.size(size * 0.42f))
     }
 }
 
@@ -215,8 +215,8 @@ fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit, deta
             checked = checked,
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = c.onAccent,
-                checkedTrackColor = c.accent,
+                checkedThumbColor = c.onPrimary,
+                checkedTrackColor = c.primary,
                 uncheckedThumbColor = c.muted,
                 uncheckedTrackColor = c.surface2,
                 uncheckedBorderColor = c.line,

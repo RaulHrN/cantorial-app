@@ -11,6 +11,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
@@ -23,50 +24,62 @@ data class VoxColors(
     val text: Color,
     val muted: Color,
     val faint: Color,
-    /** Amber: what you sing, primary actions, good pitch. */
+    /** Sage green: what you sing, highlights, chords, good pitch. */
     val accent: Color,
     val onAccent: Color,
+    /** Deep olive: main buttons. */
+    val primary: Color,
+    val onPrimary: Color,
     /** Sand: the lead melody (regente). */
     val melody: Color,
-    /** Rose: other harmony / backing parts. */
+    /** Mauve: other harmony / backing parts. */
     val rose: Color,
     val warn: Color,
     val bad: Color,
+    /** Terracotta of the maple leaves in the illustrations. */
+    val leaf: Color,
     val dark: Boolean,
 )
 
-// Warm palette: dark roasted brown or cream paper, amber accent, sand and terracotta tones.
+// Classical palette: parchment or dark olive ink, sage and deep olive greens, sand, ochre and
+// the terracotta red of the maple in the illustrations.
 private val Dark = VoxColors(
-    bg = Color(0xFF140F0C),
-    surface = Color(0xFF1E1713),
-    surface2 = Color(0xFF2A201A),
-    line = Color(0xFF3A2D24),
-    text = Color(0xFFF8EDE2),
-    muted = Color(0xFFB09A87),
-    faint = Color(0xFF6A574A),
-    accent = Color(0xFFF5A33B),
-    onAccent = Color(0xFF2B1600),
-    melody = Color(0xFFD8BFA6),
-    rose = Color(0xFFE88A8F),
-    warn = Color(0xFFEE6A35),
-    bad = Color(0xFFD8434B),
+    bg = Color(0xFF1B1C16),
+    surface = Color(0xFF25261E),
+    surface2 = Color(0xFF323327),
+    line = Color(0xFF414234),
+    text = Color(0xFFEFE6D6),
+    muted = Color(0xFFAAA28C),
+    faint = Color(0xFF6C6857),
+    accent = Color(0xFFA9BC85),
+    onAccent = Color(0xFF1B2412),
+    primary = Color(0xFF5B6D47),
+    onPrimary = Color(0xFFF4ECDD),
+    melody = Color(0xFFD6C2A0),
+    rose = Color(0xFFB392B8),
+    warn = Color(0xFFDBA845),
+    bad = Color(0xFFD9694A),
+    leaf = Color(0xFFC9573B),
     dark = true,
 )
 
 private val Light = VoxColors(
-    bg = Color(0xFFFCF6EE),
-    surface = Color(0xFFF5EBDD),
-    surface2 = Color(0xFFEDDFCC),
-    line = Color(0xFFE3D2BC),
-    text = Color(0xFF2B1E15),
-    muted = Color(0xFF7D6656),
-    faint = Color(0xFFC2AD98),
-    accent = Color(0xFFE08A12),
-    onAccent = Color(0xFF2B1600),
-    melody = Color(0xFF9E7B5D),
-    rose = Color(0xFFC4525E),
-    warn = Color(0xFFD5612A),
-    bad = Color(0xFFB8302F),
+    bg = Color(0xFFF2EADC),
+    surface = Color(0xFFE8DDCA),
+    surface2 = Color(0xFFDCD0BA),
+    line = Color(0xFFCDBFA6),
+    text = Color(0xFF26271D),
+    muted = Color(0xFF6F6853),
+    faint = Color(0xFFAA9F87),
+    accent = Color(0xFF58713B),
+    onAccent = Color(0xFFF4ECDD),
+    primary = Color(0xFF34422D),
+    onPrimary = Color(0xFFF4ECDD),
+    melody = Color(0xFF8F7655),
+    rose = Color(0xFF84608A),
+    warn = Color(0xFFB0751A),
+    bad = Color(0xFFB2452B),
+    leaf = Color(0xFFB8452C),
     dark = false,
 )
 
@@ -78,14 +91,16 @@ object Vox {
         get() = LocalVox.current
 }
 
+/** Serif type throughout, like engraved sheet music. */
 object VoxType {
-    val display = TextStyle(fontSize = 104.sp, fontWeight = FontWeight.Light, letterSpacing = (-3).sp, lineHeight = 108.sp)
-    val title = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp)
-    val heading = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-    val body = TextStyle(fontSize = 16.sp, lineHeight = 24.sp)
-    val label = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)
-    val small = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
-    val caps = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp)
+    private val serif = FontFamily.Serif
+    val display = TextStyle(fontFamily = serif, fontSize = 104.sp, fontWeight = FontWeight.Normal, letterSpacing = (-3).sp, lineHeight = 108.sp)
+    val title = TextStyle(fontFamily = serif, fontSize = 30.sp, fontWeight = FontWeight.Normal, letterSpacing = (-0.3).sp)
+    val heading = TextStyle(fontFamily = serif, fontSize = 19.sp, fontWeight = FontWeight.Medium)
+    val body = TextStyle(fontFamily = serif, fontSize = 16.sp, lineHeight = 24.sp)
+    val label = TextStyle(fontFamily = serif, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    val small = TextStyle(fontFamily = serif, fontSize = 13.5.sp, lineHeight = 19.sp)
+    val caps = TextStyle(fontFamily = serif, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp)
 }
 
 @Composable
@@ -93,13 +108,13 @@ fun VoxTheme(content: @Composable () -> Unit) {
     val c = if (isSystemInDarkTheme()) Dark else Light
     val scheme = if (c.dark) {
         darkColorScheme(
-            primary = c.accent, onPrimary = c.onAccent, background = c.bg, onBackground = c.text,
+            primary = c.primary, onPrimary = c.onPrimary, background = c.bg, onBackground = c.text,
             surface = c.surface, onSurface = c.text, surfaceVariant = c.surface2, onSurfaceVariant = c.muted,
             outline = c.line, secondary = c.melody,
         )
     } else {
         lightColorScheme(
-            primary = c.accent, onPrimary = c.onAccent, background = c.bg, onBackground = c.text,
+            primary = c.primary, onPrimary = c.onPrimary, background = c.bg, onBackground = c.text,
             surface = c.surface, onSurface = c.text, surfaceVariant = c.surface2, onSurfaceVariant = c.muted,
             outline = c.line, secondary = c.melody,
         )
