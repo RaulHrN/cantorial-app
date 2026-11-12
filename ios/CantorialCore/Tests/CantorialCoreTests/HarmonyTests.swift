@@ -189,7 +189,8 @@ final class ContentTests: XCTestCase {
     }
 
     func testEveryExerciseBuildsATimeline() {
-        for ex in Content.exercises {
+        // Breathing and balance exercises have no notes to play or sing.
+        for ex in Content.exercises where ex.kind != .breath && ex.kind != .balance {
             let tl = ExerciseTimeline.build(ex, root: 57, range: 45...69)
             XCTAssertGreaterThan(tl.lengthMs, 0, ex.id)
         }
